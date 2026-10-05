@@ -86,7 +86,9 @@
   #context-input { flex: 1 1 auto; min-height: 160px; }
   #context-buttons { display: flex; gap: 8px; }
   #set-context-button { background: var(--tie-soft); border-color: var(--tie-soft); color: var(--tie); }
-  #context-status { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; }
+  #context-status { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; align-self: flex-start; }
+  #context-status.is-set { color: var(--tie); background: var(--tie-soft); padding: 3px 10px; border-radius: 999px; }
+  .copy-button { display: block; margin-top: 10px; padding: 3px 10px; font-size: 0.8rem; font-weight: 400; border-radius: 8px; color: var(--muted); }
 
   @media (max-width: 800px) {
     #main-layout { flex-direction: column; height: auto; min-height: 100vh; padding: 10px; }
@@ -141,11 +143,11 @@
 // ---------------------------------------------------------------------
 // SETTINGS — edit these two lines, nothing else needs to change.
 // ---------------------------------------------------------------------
-const WORKER_URL = "https://epinetlens.YOUR-SUBDOMAIN.workers.dev"; // your Cloudflare Worker URL
+const WORKER_URL = "https://late-art-e9b0.joel-a-c-baum.workers.dev"; // your Cloudflare Worker URL
 const WORKSHOP_CODE = ""; // must match WORKSHOP_CODE in the worker (leave blank if unused)
 // ---------------------------------------------------------------------
 
-const GREETING = "Hello! I am EpinetLens. Paste the text you'd like me to analyze and I'll guide you through a step-by-step epistemic analysis.";
+const GREETING = "Hi! I’m EpinetLens. Think of me as your backstage pass to the world of epistemic networks. I can help you learn about the Epinets framework, or you can drop a text—an article, a rant, a social media post—in the context window, and I’ll show you how trust, authority, and interpretation are really being constructed behind the scenes. How can I assist you today?";
 
 const historyEl = document.getElementById("chat-history");
 const inputEl = document.getElementById("user-input");
@@ -173,7 +175,7 @@ function addBubble(role, text) {
   const el = document.createElement("div");
   el.className = "msg " + role;
   if (role === "user") el.textContent = text;
-  else el.innerHTML = renderMarkdown(text);
+  else { el.innerHTML = renderMarkdown(text); if (text) attachCopy(el); }
   historyEl.appendChild(el);
   historyEl.scrollTop = historyEl.scrollHeight;
   return el;
@@ -260,11 +262,13 @@ async function send() {
 
     if (!reply) throw new Error("No reply was received.");
     messages.push({ role: "assistant", content: reply });
+    attachCopy(bubble);
     if (truncated) errorEl.textContent = "That reply hit the length limit. Type \"continue\" to pick up where it stopped.";
   } catch (err) {
     // Roll back so the conversation stays well-formed and the text isn't lost.
     if (reply) {
       messages.push({ role: "assistant", content: reply });
+      attachCopy(bubble);
     } else {
       messages.pop();
       bubble.remove();
@@ -279,15 +283,63 @@ async function send() {
   }
 }
 
-function resetAll() {
-  if (busy) return;
-  messages = [];
+// Adds a "Copy" button under a finished reply; copies it with its formatting.
+function attachCopy(bubble) {
+  const html = bubble.innerHTML;
+  const text = bubble.textContent || "";
+  const btn = document.createElement("button");
+  btn.className = "copy-button";
+  btn.setAttribute("aria-label", "Copy response text");
+  btn.title = "Copy response text (with formatting)";
+  btn.textContent = "Copy";
+  btn.addEventListener("click", async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      btn.textContent = "Copied!";
+    } catch (e) {
+      btn.textContent = "Error";
+    }
+    setTimeout(() => { btn.textContent = "Copy"; }, 2000);
+  });
+  bubble.appendChild(btn);
+}
+
+// The context is remembered in this browser between visits.
+const CONTEXT_STORAGE_KEY = "persistentChatContext";
+function storeContext(value) {
+  try {
+    if (value) localStorage.setItem(CONTEXT_STORAGE_KEY, value);
+    else localStorage.removeItem(CONTEXT_STORAGE_KEY);
+  } catch (e) {}
+}
+function updateContextStatus() {
+  contextStatus.textContent = context ? "Context is set and will be used." : "No context set.";
+  contextStatus.classList.toggle("is-set", !!context);
+}
+function clearContext() {
   context = "";
   contextInput.value = "";
-  contextStatus.textContent = "";
+  storeContext("");
+  updateContextStatus();
+}
+
+function resetAll() {
+  if (busy) return;
+  if (!confirm("Are you sure you want to reset the conversation and clear context?")) return;
+  messages = [];
+  clearContext();
   errorEl.textContent = "";
   historyEl.innerHTML = "";
-  addBubble("assistant", GREETING);
+  inputEl.value = "";
+  autoGrow();
+  addBubble("assistant", "Conversation reset. How can I help you now?");
 }
 
 sendBtn.addEventListener("click", send);
@@ -299,17 +351,16 @@ resetBtn.addEventListener("click", resetAll);
 
 document.getElementById("set-context-button").addEventListener("click", () => {
   context = contextInput.value.trim();
-  contextStatus.textContent = context
-    ? "Context set (" + context.length.toLocaleString() + " characters). It applies to every message from now on."
-    : "Nothing to set — the box is empty.";
+  storeContext(context);
+  updateContextStatus();
 });
-document.getElementById("clear-context-button").addEventListener("click", () => {
-  context = "";
-  contextInput.value = "";
-  contextStatus.textContent = "Context cleared.";
-});
+document.getElementById("clear-context-button").addEventListener("click", clearContext);
 
+try { context = (localStorage.getItem(CONTEXT_STORAGE_KEY) || "").trim(); } catch (e) {}
+contextInput.value = context;
+updateContextStatus();
 addBubble("assistant", GREETING);
+inputEl.focus();
 </script>
 </body>
 </html>
