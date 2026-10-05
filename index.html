@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EpinetLens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #f3f4f6; --panel: #ffffff; --ink: #1f2937; --muted: #6b7280;
+    --line: #d1d5db; --accent: #1d6f5c; --accent-ink: #ffffff;
+    --user: #d9f2ea; --bot: #eef0f3; --error: #b42318;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: 'Lato', system-ui, sans-serif; background: var(--bg); color: var(--ink); line-height: 1.55; }
+  #main-layout { display: flex; gap: 16px; height: 100vh; padding: 16px; max-width: 1400px; margin: 0 auto; }
+  #chat-area { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  #app-header { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  #app-header h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  #app-header p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+  #chat-container { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #chat-history { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 85%; padding: 12px 16px; border-radius: 14px; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--user); white-space: pre-wrap; }
+  .msg.assistant { align-self: flex-start; background: var(--bot); }
+  .msg.assistant > :first-child { margin-top: 0; }
+  .msg.assistant > :last-child { margin-bottom: 0; }
+  .msg.assistant h1, .msg.assistant h2, .msg.assistant h3 { font-size: 1.05rem; margin: 0.9em 0 0.4em; }
+  .msg.assistant ul, .msg.assistant ol { padding-left: 1.3em; }
+  .msg.pending { color: var(--muted); font-style: italic; }
+  #chat-input-area { display: flex; gap: 8px; align-items: flex-end; padding: 12px 20px; border-top: 1px solid var(--line); }
+  textarea { font: inherit; color: inherit; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; resize: none; width: 100%; background: #fff; }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #user-input { max-height: 220px; }
+  button { font: inherit; font-weight: 700; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 9px 14px; cursor: pointer; }
+  button:hover { background: #f9fafb; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #send-button { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; flex: none; }
+  #send-button:hover { filter: brightness(1.08); background: var(--accent); }
+  .error-display { color: var(--error); padding: 0 20px; font-size: 0.92rem; min-height: 1.2em; }
+  #reset-button { margin: 4px 20px 14px; align-self: flex-start; font-weight: 400; font-size: 0.9rem; }
+  #context-container { flex: 0 0 320px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  #context-container h2 { margin: 0; font-size: 1.05rem; }
+  #context-input { flex: 1 1 auto; min-height: 160px; }
+  #context-buttons { display: flex; gap: 8px; }
+  #context-status { color: var(--muted); font-size: 0.9rem; min-height: 1.2em; }
+  @media (max-width: 800px) {
+    #main-layout { flex-direction: column; height: auto; min-height: 100vh; }
+    #chat-area { height: 75vh; }
+    #context-container { flex: none; }
+  }
+</style>
+</head>
+<body>
+<div id="main-layout">
+  <div id="chat-area">
+    <div id="app-header">
+      <h1>EpinetLens</h1>
+      <p>Chat with EpinetLens, your guide to seeing the world through the lens of epistemic networks.</p>
+    </div>
+    <div id="chat-container">
+      <div id="chat-history"></div>
+      <div id="chat-input-area">
+        <textarea id="user-input" placeholder="Paste a text to analyze, or reply (Shift+Enter for new line)..." rows="1"></textarea>
+        <button id="send-button" aria-label="Send message">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z"/></svg>
+        </button>
+      </div>
+      <div id="error-message" class="error-display"></div>
+      <button id="reset-button">Reset Conversation &amp; Context</button>
+    </div>
+  </div>
+
+  <div id="context-container">
+    <h2>Persistent Context:</h2>
+    <textarea id="context-input" placeholder="Enter background context here for the AI to consider..." rows="10"></textarea>
+    <div id="context-buttons">
+      <button id="set-context-button">Set Context</button>
+      <button id="clear-context-button">Clear Context</button>
+    </div>
+    <div id="context-status"></div>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------
+// SETTINGS — edit these two lines, nothing else needs to change.
+// ---------------------------------------------------------------------
+const WORKER_URL = "https://late-art-e9b0.joel-a-c-baum.workers.dev"; // your Cloudflare Worker URL
+const WORKSHOP_CODE = ""; // must match WORKSHOP_CODE in the worker (leave blank if unused)
+// ---------------------------------------------------------------------
+
+const GREETING = "Hello! I am EpinetLens. Paste the text you'd like me to analyze and I'll guide you through a step-by-step epistemic analysis.";
+
+const historyEl = document.getElementById("chat-history");
+const inputEl = document.getElementById("user-input");
+const sendBtn = document.getElementById("send-button");
+const errorEl = document.getElementById("error-message");
+const resetBtn = document.getElementById("reset-button");
+const contextInput = document.getElementById("context-input");
+const contextStatus = document.getElementById("context-status");
+
+let messages = [];   // the conversation, resent to the worker each turn
+let context = "";    // the persistent context currently in force
+let busy = false;
+
+function renderMarkdown(text) {
+  return DOMPurify.sanitize(marked.parse(text));
+}
+
+function addBubble(role, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  if (role === "user") el.textContent = text;
+  else el.innerHTML = renderMarkdown(text);
+  historyEl.appendChild(el);
+  historyEl.scrollTop = historyEl.scrollHeight;
+  return el;
+}
+
+function setBusy(state) {
+  busy = state;
+  sendBtn.disabled = state;
+}
+
+function autoGrow() {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 220) + "px";
+}
+
+async function send() {
+  if (busy) return;
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  errorEl.textContent = "";
+  setBusy(true);
+  addBubble("user", text);
+  messages.push({ role: "user", content: text });
+  inputEl.value = "";
+  autoGrow();
+
+  const bubble = addBubble("assistant", "");
+  bubble.classList.add("pending");
+  bubble.textContent = "Thinking…";
+  let reply = "";
+
+  try {
+    const headers = { "content-type": "application/json" };
+    if (WORKSHOP_CODE) headers["x-workshop-code"] = WORKSHOP_CODE;
+
+    const resp = await fetch(WORKER_URL, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ messages, context }),
+    });
+
+    if (!resp.ok) {
+      let detail = "Request failed (" + resp.status + ").";
+      try {
+        const j = await resp.json();
+        if (typeof j.error === "string") detail = j.error;
+        else if (j.error && j.error.message) detail = j.error.message;
+      } catch (e) {}
+      throw new Error(detail);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let truncated = false;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload) continue;
+        let evt;
+        try { evt = JSON.parse(payload); } catch (e) { continue; }
+
+        if (evt.type === "content_block_delta" && evt.delta && evt.delta.type === "text_delta") {
+          reply += evt.delta.text;
+          bubble.classList.remove("pending");
+          bubble.innerHTML = renderMarkdown(reply);
+          historyEl.scrollTop = historyEl.scrollHeight;
+        } else if (evt.type === "message_delta" && evt.delta && evt.delta.stop_reason === "max_tokens") {
+          truncated = true;
+        } else if (evt.type === "error") {
+          throw new Error((evt.error && evt.error.message) || "The model returned an error.");
+        }
+      }
+    }
+
+    if (!reply) throw new Error("No reply was received.");
+    messages.push({ role: "assistant", content: reply });
+    if (truncated) errorEl.textContent = "That reply hit the length limit. Type \"continue\" to pick up where it stopped.";
+  } catch (err) {
+    // Roll back so the conversation stays well-formed and the text isn't lost.
+    if (reply) {
+      messages.push({ role: "assistant", content: reply });
+    } else {
+      messages.pop();
+      bubble.remove();
+      historyEl.lastChild && historyEl.lastChild.remove();
+      inputEl.value = text;
+      autoGrow();
+    }
+    errorEl.textContent = "Error: " + (err.message || "Something went wrong.");
+  } finally {
+    setBusy(false);
+    inputEl.focus();
+  }
+}
+
+function resetAll() {
+  if (busy) return;
+  messages = [];
+  context = "";
+  contextInput.value = "";
+  contextStatus.textContent = "";
+  errorEl.textContent = "";
+  historyEl.innerHTML = "";
+  addBubble("assistant", GREETING);
+}
+
+sendBtn.addEventListener("click", send);
+inputEl.addEventListener("input", autoGrow);
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+});
+resetBtn.addEventListener("click", resetAll);
+
+document.getElementById("set-context-button").addEventListener("click", () => {
+  context = contextInput.value.trim();
+  contextStatus.textContent = context
+    ? "Context set (" + context.length.toLocaleString() + " characters). It applies to every message from now on."
+    : "Nothing to set — the box is empty.";
+});
+document.getElementById("clear-context-button").addEventListener("click", () => {
+  context = "";
+  contextInput.value = "";
+  contextStatus.textContent = "Context cleared.";
+});
+
+addBubble("assistant", GREETING);
+</script>
+</body>
+</html>
